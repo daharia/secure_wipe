@@ -5,8 +5,12 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "util.h"
+
+static files_t *node = NULL;
 
 void util_strcat(char *src, const char *dsc) {
     util_memcpy((void*)(src + util_strlen(src)), (void *)dsc, util_strlen(dsc));
@@ -61,57 +65,91 @@ void util_bzero(void *ptr, size_t size) {
     }
 }
 
-node_t *util_linked_list_init(void) {
-    node_t *head = NULL;
+BOOL util_linked_list_add_line(const char *path) {
+    files_t *new = NULL;
+    int len;
     
-    return (node_t *)malloc(sizeof(node_t));   
-}
+    new = (files_t *)malloc(sizeof(files_t));
+    if (new == NULL) {
+        #ifdef DEBUG
+        printf("[util_linked_list_add_line] malloc is NULL\n");
+        #endif
+        return FALSE;
+    }
+    len = util_strlen(path);
 
-BOOL util_linked_list_add_line(node_t *node, const char *str, int size) {
-    node_t *ptr = node;
+    new->path = (char *)malloc(sizeof(char) * len + 1);
+    if (new->path == NULL) {
+        #ifdef DEBUG
+        printf("[util_linked_list_add_line] malloc is NULL\n");
+        #endif
+        free(new);
+        return FALSE;
+    }
+    util_memcpy((void*)new->path, (void*)path, len);
+    new->path[len + 1] = 0; // End of string is '\0'
+    new->next = NULL;
 
-    while (ptr != NULL) {
-        if (ptr->str != NULL) {
+    if (node) { // if node != NULL, append node to next
+        files_t *ptr = node;
+        while(ptr->next)
             ptr = ptr->next;
-        }
-        else {
-            int len = util_strlen(str);
-            
-            ptr->str = (char *)malloc(len + 1);
-            if (ptr->str == NULL) {
-                return FALSE;
-            }
-            ptr->size = size;
-            util_memcpy((void*)ptr->str, (void*)str, len);
-            
-            return TRUE;
-        }
+        ptr->next = new;
+    } else {
+        node = new;
     }
-    return FALSE;
+    return TRUE;  
 }
 
-void util_linked_list_clean(node_t *node) {
-    node_t *ptr = node;
-    node_t *tmp;
-
-    while (ptr->next != NULL) {
-        if (ptr->str != NULL) {
-            free(ptr->str);
+void util_linked_list_clean(void) {
+    files_t *ptr = node;
+    while (ptr) {
+        if (ptr->path != NULL) {
+            free(ptr->path);
         }
-        tmp = ptr;
+        files_t *previous = ptr;
         ptr = ptr->next;
-        free(tmp);
+        free(previous);
     }
 }
 
-void util_walk_directories(node_t *node, const char *path) {
+#ifdef DEBUG
+void util_linked_list_print_all_path(void) {
+    files_t *ptr = node;
+    int number = 0;
+
+    while (ptr) {
+        printf("%s\n", ptr->path);
+        number += 1;
+        ptr = ptr->next;
+    }
+    printf("Number of files: %d\n", number);
+}
+#endif
+
+void util_walk_directories(const char *path) {
     DIR *d;
     struct dirent *dir;
     char buf[_MAX_PATH];
+    int err;
 
-    if (is_regular_file(path)) {
-        printf("%s\n", buf);
-        printf("%s\n", buf);
+    // chdir("c:\\");
+
+    err = util_is_regular_file(path);
+    if (err == -1) {
+        #ifdef DEBUG
+        printf("[util_walk_directories] util_is_regular_file(%s) == %d\n", path, err);
+        #endif
+        return;
+    }
+    #ifdef DEBUG
+    else if (err == -2) {
+        printf("[util_walk_directories] util_is_regular_file(%s) == %d\n", path, err);
+        return;
+    }
+    #endif
+    else if (err >= 0) {
+        util_linked_list_add_line(path);
         return;
     }
     
@@ -128,30 +166,101 @@ void util_walk_directories(node_t *node, const char *path) {
             util_strcat(buf, "\\");
             util_strcat(buf, dir->d_name);
             
-            if (is_regular_file(buf)) {
-                printf("%s\n", buf);
-            } else {
-                util_walk_directories(node, buf);
+            err = util_is_regular_file(buf);
+            if (err == -1) {
+                #ifdef DEBUG
+                printf("[util_walk_directories] util_is_regular_file(%s) == %d\n", buf, err);
+                #endif
+                continue;
             }
+            else if (err == -2)
+                util_walk_directories(buf);
+            else
+                util_linked_list_add_line(buf);
         }
         closedir(d);
     }
-    #ifdef DEBUG
-    else {
-        printf("[util_walk_directories] opendir error\n");
-    }
-    #endif
 }
 
-int is_regular_file(const char *path) {
+int util_is_regular_file(const char *path) {
     struct stat path_stat;
     
     if (stat(path, &path_stat) != 0) {
-        return 0;
+        return -1;
     }
-    if (S_ISREG(path_stat.st_mode)) {
-        // util_linked_list_add_line(node, path, path_stat.st_size);
-        return 1;
+    if (S_ISREG(path_stat.st_mode))
+        return path_stat.st_size;
+    else
+        return -2;
+}
+
+void util_wipe_files(void) {
+    files_t *ptr = node;
+
+    while (ptr) {
+        util_wipe_file(ptr->path);
+        ptr = ptr->next;
     }
-    return 0;
+}
+
+BOOL util_wipe_file(const char *path) {
+    int cycle_count = 2; // Number of rewrites
+
+    int fd, err, size;
+    int quantity, remainder;
+    char buffer[BUFFER_MAX];
+
+    size = util_is_regular_file(path);
+    if (size <= 0) {
+        #ifdef DEBUG
+        printf("[wipe] util_is_regular_file('%s') == %d\n", path, size);
+        #endif
+        return FALSE;
+    }
+    util_bzero((void *)buffer, BUFFER_MAX);
+    quantity = size / BUFFER_MAX;
+    remainder = size % BUFFER_MAX;
+
+    fd = open(path, O_WRONLY);
+    if (fd == -1) {
+        #ifdef DEBUG
+        printf("[wipe] open('%s') == %d\n", path, fd);
+        #endif
+        return FALSE;
+    }
+    for (int cycle = 0; cycle < cycle_count; cycle++) {
+
+        for (int i = 0; i < quantity; i++) {
+            err = write(fd, buffer, BUFFER_MAX);
+            if (err == -1) {
+                #ifdef DEBUG
+                printf("[wipe] write('%s') == %d\n", path, err);
+                #endif
+                goto err_break;
+            }
+        }
+        err = write(fd, buffer, remainder);
+        if (err == -1) {
+            #ifdef DEBUG
+            printf("[wipe] write('%s') == %d\n", path, err);
+            #endif
+            goto err_break;
+        }
+        err = lseek(fd, 0, SEEK_SET);
+        if (err == -1) {
+            #ifdef DEBUG
+            printf("[wipe] write('%s') == %d\n", path, err);
+            #endif
+            goto err_break;
+        }
+    }
+
+    err_break:
+    close(fd);
+
+    #ifndef DEBUG
+    remove(path);
+    #endif
+
+    return TRUE;
 }

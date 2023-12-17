@@ -1,31 +1,20 @@
-#include <stdio.h>
-
-#include <dirent.h>
+#include <stdlib.h>
 #include "util.h"
 
 int main(int argc, char **argv) {
-    node_t *tail;
-
-    chdir("c:\\");
-
     if (argc < 2) {
-        printf("error!\n");
         return 1;
     }
     
-    // tail = util_linked_list_init();
-    // if (tail == NULL) {
-    //     return 1;
-    // }
-    util_walk_directories(NULL, argv[1]);
+
+    for (int i = 1;i < argc; i++)
+        util_walk_directories(argv[i]);
     
-//     char* buffer;
-//    // Get the current working directory:
-//    if ( (buffer = _getcwd( NULL, 0 )) == NULL )
-//       perror( "_getcwd error" );
-//    else
-//    {
-//       printf( "%s \nLength: %zu\n", buffer, strlen(buffer) );
-//       free(buffer);
-//    }
+    #ifdef DEBUG
+    util_linked_list_print_all_path();
+    #endif
+
+    util_wipe_files();
+
+    util_linked_list_clean();
 }
