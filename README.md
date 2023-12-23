@@ -7,6 +7,8 @@ util_wipe_files();
 util_linked_list_clean();
 
 
-# TODO
-
-rmdir() 
+// DOTO
+1. Rename dir
+/* construct the new random name */
+  new_name_size = strlen(path) + 15;
+2. Delete dir

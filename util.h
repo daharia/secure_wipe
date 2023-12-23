@@ -45,12 +45,10 @@ void util_walk_directories(const char *);
 // Return -1 if error, -2 if directory, size of file if path is file
 int util_is_regular_file(const char *);
 
-#ifdef DEBUG
-void util_linked_list_print_all_path(void);
-#endif
-
 // ...
 void util_wipe_files(void);
 
 // Return TRUE if OK, else FALSE
 BOOL util_wipe_file(const char *);
+
+int util_name_len(const char *);
