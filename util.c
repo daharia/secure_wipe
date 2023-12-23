@@ -10,7 +10,7 @@
 
 #include "util.h"
 
-static files_t *node = NULL;
+static files_t *linked_list = NULL;
 
 void util_strcat(char *src, const char *dsc)
 {
@@ -76,7 +76,7 @@ void util_bzero(void *ptr, size_t size)
     }
 }
 
-BOOL util_linked_list_add_line(const char *path)
+BOOL util_linked_list_add_line(const char *path, char type)
 {
     files_t *new = NULL;
     int len;
@@ -89,9 +89,9 @@ BOOL util_linked_list_add_line(const char *path)
 #endif
         return FALSE;
     }
-    len = util_strlen(path);
+    len = util_strlen(path) + 1;
 
-    new->path = (char *)malloc(sizeof(char) * len + 1);
+    new->path = (char *)malloc(sizeof(char) * len);
     if (new->path == NULL)
     {
 #ifdef DEBUG
@@ -101,28 +101,18 @@ BOOL util_linked_list_add_line(const char *path)
         return FALSE;
     }
     util_memcpy((void *)new->path, (void *)path, len);
-    new->path[len + 1] = 0; // End of string is '\0'
     new->next = NULL;
+    new->type = type;
 
-    if (node)
-    { // if node != NULL, append node to next
-        files_t *ptr = node;
-        while (ptr->next)
-            ptr = ptr->next;
-        ptr->next = new;
-        new->prev = ptr;
-    }
-    else
-    {
-        node = new;
-        node->prev = NULL;
-    }
+    new->next = linked_list;
+    linked_list = new;
+
     return TRUE;
 }
 
 void util_linked_list_clean(void)
 {
-    files_t *ptr = node;
+    files_t *ptr = linked_list;
     while (ptr)
     {
         if (ptr->path != NULL)
@@ -153,13 +143,15 @@ void util_walk_directories(const char *path)
     }
     else if (err >= 0)
     {
-        util_linked_list_add_line(path);
+        util_linked_list_add_line(path, FILE);
         return;
     }
 
     d = opendir(path);
     if (d)
     {
+        util_linked_list_add_line(path, DIRECTORY);
+
         while ((dir = readdir(d)) != NULL)
         {
             if (util_strcmp(dir->d_name, "."))
@@ -183,7 +175,7 @@ void util_walk_directories(const char *path)
             else if (err == -2)
                 util_walk_directories(buf);
             else
-                util_linked_list_add_line(buf);
+                util_linked_list_add_line(buf, FILE);
         }
         closedir(d);
     }
@@ -205,42 +197,19 @@ int util_is_regular_file(const char *path)
 
 void util_wipe_files(void)
 {
-    char *zero = "0000000000000000000000000000000000000000";
-    int len_zero;
-    char buf[_MAX_PATH];
-    files_t *ptr = node;
-    char *ptr_path;
-
-    len_zero = util_strlen(zero);
+    files_t *ptr = linked_list;
 
     while (ptr)
     {
-        util_wipe_file(ptr->path);
+        util_wipe_file(ptr);
 
-        int len_name = util_name_len(ptr->path);
-        int len_path = util_strlen(ptr->path);
-
-        util_bzero(buf, _MAX_PATH);
-        util_strcat(buf, ptr->path);
-
-        if (len_name + 5 > len_zero)
-            util_memcpy(buf + (len_path - len_name), zero, len_name);
-        else
-            util_memcpy(buf + (len_path - len_name), zero, len_name + 5);
-
-        rename(ptr->path, buf);
-
-        remove(buf);
-
-        ptr->path[len_path - len_name - 1] = 0;
-        printf("%s\n", ptr->path);
         ptr = ptr->next;
     }
 
     util_linked_list_clean();
 }
 
-BOOL util_wipe_file(const char *path)
+void util_wipe_file(files_t *ptr)
 {
     int cycle_count = 2; // Number of rewrites
 
@@ -248,7 +217,10 @@ BOOL util_wipe_file(const char *path)
     int quantity, remainder;
     char buffer[BUFFER_MAX];
 
-    size = util_is_regular_file(path);
+    if (ptr->type == DIRECTORY)
+        goto rename_and_delete;
+
+    size = util_is_regular_file(ptr->path); // check size again if file!
     if (size == 0)
         size = 100;
 
@@ -256,13 +228,13 @@ BOOL util_wipe_file(const char *path)
     quantity = size / BUFFER_MAX;
     remainder = size % BUFFER_MAX;
 
-    fd = open(path, O_WRONLY);
+    fd = open(ptr->path, O_WRONLY);
     if (fd == -1)
     {
 #ifdef DEBUG
-        printf("[wipe] open('%s') == %d\n", path, fd);
+        printf("[wipe] open('%s') == %d\n", ptr->path, fd);
 #endif
-        return FALSE;
+        return;
     }
     for (int cycle = 0; cycle < cycle_count; cycle++)
     {
@@ -272,7 +244,7 @@ BOOL util_wipe_file(const char *path)
             if (err == -1)
             {
 #ifdef DEBUG
-                printf("[wipe] write('%s') == %d\n", path, err);
+                printf("[wipe] write('%s') == %d\n", ptr->path, err);
 #endif
                 goto err_break;
             }
@@ -281,7 +253,7 @@ BOOL util_wipe_file(const char *path)
         if (err == -1)
         {
 #ifdef DEBUG
-            printf("[wipe] write('%s') == %d\n", path, err);
+            printf("[wipe] write('%s') == %d\n", ptr->path, err);
 #endif
             goto err_break;
         }
@@ -289,7 +261,7 @@ BOOL util_wipe_file(const char *path)
         if (err == -1)
         {
 #ifdef DEBUG
-            printf("[wipe] write('%s') == %d\n", path, err);
+            printf("[wipe] write('%s') == %d\n", ptr->path, err);
 #endif
             goto err_break;
         }
@@ -298,7 +270,23 @@ BOOL util_wipe_file(const char *path)
 err_break:
     close(fd);
 
-    return TRUE;
+rename_and_delete:
+    char *zero_40 = "0000000000000000000000000000000000000000";
+    char buf[_MAX_PATH];
+    int len_name = util_name_len(ptr->path);
+    int len_path = util_strlen(ptr->path);
+
+    util_bzero(buf, _MAX_PATH);
+    util_strcat(buf, ptr->path);
+
+    util_memcpy(buf + (len_path - len_name), zero_40, len_name);
+
+    rename(ptr->path, buf);
+
+    if (ptr->type == FILE)
+        unlink(buf);
+    else
+        rmdir(buf);
 }
 
 int util_name_len(const char *path)
