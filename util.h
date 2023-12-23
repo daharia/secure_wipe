@@ -4,16 +4,17 @@
 
 #define BUFFER_MAX 1000
 
-#define TRUE    1
-#define FALSE   0
+#define TRUE 1
+#define FALSE 0
 
 typedef char BOOL;
 
-typedef struct files {
+typedef struct files
+{
     char *path;
     struct files *next;
+    struct files *prev;
 } files_t;
-
 
 // Compare lines
 int util_strcmp(const char *, const char *);
