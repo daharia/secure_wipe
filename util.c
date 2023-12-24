@@ -290,15 +290,15 @@ rename_and_delete:
 
     util_bzero(buf, _MAX_PATH);
     util_strcat(buf, ptr->path);
-    
+
     rand_string(buf + (len_path - len_name), len_name);
-    
+
     rename(ptr->path, buf);
 
-    // if (ptr->type == FILE)
-    //     unlink(buf);
-    // else
-    //     rmdir(buf);
+    if (ptr->type == FILE)
+        unlink(buf);
+    else
+        rmdir(buf);
 }
 
 int util_name_len(const char *path)

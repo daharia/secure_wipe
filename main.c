@@ -1,5 +1,7 @@
 #include <stdlib.h>
+
 #include "util.h"
+#include "rand.h"
 
 int main(int argc, char **argv)
 {
@@ -7,7 +9,7 @@ int main(int argc, char **argv)
         return 1;
 
     rand_init();
-    
+
     for (int i = 1; i < argc; i++)
         util_walk_directories(argv[i]);
 
