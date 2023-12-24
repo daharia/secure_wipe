@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "util.h"
+#include "rand.h"
 
 static files_t *linked_list = NULL;
 
@@ -199,9 +200,20 @@ void util_wipe_files(void)
 {
     files_t *ptr = linked_list;
 
-    while (ptr)
+    while (ptr) // Wipe files
     {
-        util_wipe_file(ptr);
+        if (ptr->type == FILE)
+            util_wipe_file(ptr);
+
+        ptr = ptr->next;
+    }
+
+    ptr = linked_list;
+
+    while (ptr) // Wipe directory
+    {
+        if (ptr->type == DIRECTORY)
+            util_wipe_file(ptr);
 
         ptr = ptr->next;
     }
@@ -271,22 +283,22 @@ err_break:
     close(fd);
 
 rename_and_delete:
-    char *zero_40 = "0000000000000000000000000000000000000000";
     char buf[_MAX_PATH];
+
     int len_name = util_name_len(ptr->path);
     int len_path = util_strlen(ptr->path);
 
     util_bzero(buf, _MAX_PATH);
     util_strcat(buf, ptr->path);
-
-    util_memcpy(buf + (len_path - len_name), zero_40, len_name);
-
+    
+    rand_string(buf + (len_path - len_name), len_name);
+    
     rename(ptr->path, buf);
 
-    if (ptr->type == FILE)
-        unlink(buf);
-    else
-        rmdir(buf);
+    // if (ptr->type == FILE)
+    //     unlink(buf);
+    // else
+    //     rmdir(buf);
 }
 
 int util_name_len(const char *path)
